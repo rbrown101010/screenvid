@@ -12,14 +12,33 @@ const exportBtn = document.getElementById('export-btn');
 const videoContainer = document.getElementById('video-container');
 const phoneDevice = document.getElementById('phone-device');
 
-// Check if we're on iOS
+// Enhanced browser detection
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || 
+                 /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+const isDesktopSafari = isSafari && !isIOS;
+
+// Check MediaRecorder support
+const hasMediaRecorderSupport = () => {
+    if (!window.MediaRecorder) return false;
+    
+    // Test specific codec support
+    const types = [
+        'video/webm;codecs=vp8',
+        'video/webm;codecs=vp9', 
+        'video/webm',
+        'video/mp4'
+    ];
+    
+    return types.some(type => MediaRecorder.isTypeSupported(type));
+};
+
+const mediaRecorderSupported = hasMediaRecorderSupport();
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
-    setupIOSWorkarounds();
+    setupBrowserWorkarounds();
 });
 
 // Setup all event listeners
@@ -44,25 +63,41 @@ function setupEventListeners() {
     }
 }
 
-// Setup iOS-specific workarounds
-function setupIOSWorkarounds() {
+// Setup browser-specific workarounds
+function setupBrowserWorkarounds() {
     if (isIOS || isSafari) {
-        // Update upload area text for mobile
+        // Update upload area text for mobile/Safari
         const uploadText = uploadArea.querySelector('h3');
         const uploadSubtext = uploadArea.querySelector('p');
         
-        if (uploadText) {
-            uploadText.textContent = 'Tap to select your video';
-        }
-        if (uploadSubtext) {
-            uploadSubtext.textContent = 'Choose from Photos or Files';
+        if (isIOS) {
+            if (uploadText) {
+                uploadText.textContent = 'Tap to select your video';
+            }
+            if (uploadSubtext) {
+                uploadSubtext.textContent = 'Choose from Photos or Files';
+            }
+        } else if (isSafari) {
+            if (uploadText) {
+                uploadText.textContent = 'Click to select your video (Safari)';
+            }
+            if (uploadSubtext) {
+                uploadSubtext.textContent = 'MP4 and MOV formats work best';
+            }
         }
         
-        // Add more specific file type acceptance for iOS
+        // Add more specific file type acceptance for Safari/iOS
         videoInput.setAttribute('accept', 'video/mp4,video/mov,video/quicktime,video/m4v,video/*');
         
-        // Add capture attribute for direct camera access
-        videoInput.setAttribute('capture', 'environment');
+        // Add capture attribute for direct camera access on iOS
+        if (isIOS) {
+            videoInput.setAttribute('capture', 'environment');
+        }
+    }
+    
+    // Show warning for Safari users about export limitations
+    if (isSafari && !mediaRecorderSupported) {
+        console.log('Safari detected with limited MediaRecorder support');
     }
 }
 
@@ -77,7 +112,7 @@ function handleUploadAreaClick(event) {
     }, 100);
 }
 
-// Handle video file upload with better iOS support
+// Handle video file upload with better Safari/iOS support
 function handleVideoUpload(event) {
     const files = event.target.files;
     
@@ -95,10 +130,15 @@ function handleVideoUpload(event) {
         return;
     }
     
-    // Check file size (limit to 500MB for iOS)
-    const maxSize = isIOS ? 500 * 1024 * 1024 : 1024 * 1024 * 1024; // 500MB for iOS, 1GB for others
+    // Safari-specific format warnings
+    if (isSafari && !file.type.includes('mp4') && !file.type.includes('mov') && !file.type.includes('quicktime')) {
+        showNotification('For best Safari compatibility, use MP4 or MOV format', 'info');
+    }
+    
+    // Check file size (more conservative limits for Safari/iOS)
+    const maxSize = isIOS ? 500 * 1024 * 1024 : (isSafari ? 800 * 1024 * 1024 : 1024 * 1024 * 1024);
     if (file.size > maxSize) {
-        const maxSizeText = isIOS ? '500MB' : '1GB';
+        const maxSizeText = isIOS ? '500MB' : (isSafari ? '800MB' : '1GB');
         showNotification(`File too large. Please select a video smaller than ${maxSizeText}.`, 'error');
         return;
     }
@@ -109,14 +149,14 @@ function handleVideoUpload(event) {
     showNotification('Video uploaded successfully!', 'success');
 }
 
-// Check if file is a video based on extension (iOS backup)
+// Check if file is a video based on extension (Safari/iOS backup)
 function isVideoFile(file) {
     const videoExtensions = ['.mp4', '.mov', '.m4v', '.quicktime', '.avi', '.webm', '.mkv'];
     const fileName = file.name.toLowerCase();
     return videoExtensions.some(ext => fileName.endsWith(ext));
 }
 
-// Load and display video with iOS optimizations
+// Load and display video with Safari/iOS optimizations
 function loadVideo(file) {
     try {
         const videoURL = URL.createObjectURL(file);
@@ -124,7 +164,7 @@ function loadVideo(file) {
         // Clear container
         videoContainer.innerHTML = '';
         
-        // Create video element with iOS-specific attributes
+        // Create video element with Safari/iOS-specific attributes
         videoElement = document.createElement('video');
         videoElement.src = videoURL;
         videoElement.controls = false;
@@ -134,28 +174,34 @@ function loadVideo(file) {
         videoElement.setAttribute('webkit-playsinline', 'true'); // Safari specific
         videoElement.preload = 'metadata';
         
-        // iOS-specific: Don't autoplay, wait for user interaction
+        // Safari/iOS-specific: Don't autoplay, wait for user interaction
         if (isIOS || isSafari) {
             videoElement.autoplay = false;
         } else {
             videoElement.autoplay = true;
         }
         
-        // Add error handling
+        // Add error handling with Safari-specific messages
         videoElement.addEventListener('error', (e) => {
             console.error('Video error:', e);
-            showNotification('Error loading video. Please try a different format.', 'error');
+            if (isSafari) {
+                showNotification('Error loading video in Safari. Try MP4 or MOV format.', 'error');
+            } else {
+                showNotification('Error loading video. Please try a different format.', 'error');
+            }
         });
         
         // Add loaded event handler
         videoElement.addEventListener('loadedmetadata', () => {
             console.log('Video loaded:', videoElement.videoWidth, 'x', videoElement.videoHeight);
             
-            // Try to play for non-iOS
+            // Try to play for non-Safari or give Safari users instructions
             if (!isIOS && !isSafari) {
                 videoElement.play().catch(e => {
                     console.log('Auto-play failed:', e);
                 });
+            } else if (isSafari) {
+                showNotification('Video loaded! Click the play button to preview.', 'info');
             }
         });
         
@@ -175,7 +221,7 @@ function loadVideo(file) {
     }
 }
 
-// Add video control buttons with better iOS support
+// Add video control buttons with better Safari/iOS support
 function addVideoControls() {
     const controls = document.createElement('div');
     controls.className = 'video-controls';
@@ -204,14 +250,14 @@ function addVideoControls() {
     }
 }
 
-// Video control functions with iOS improvements
+// Video control functions with Safari/iOS improvements
 function togglePlayPause() {
     if (!videoElement) return;
     
     const playBtn = document.getElementById('play-btn');
     
     if (videoElement.paused) {
-        // Use user gesture to play on iOS
+        // Use user gesture to play on Safari/iOS
         const playPromise = videoElement.play();
         
         if (playPromise !== undefined) {
@@ -219,7 +265,11 @@ function togglePlayPause() {
                 playBtn.textContent = '⏸️';
             }).catch(error => {
                 console.log('Play failed:', error);
-                showNotification('Tap the video to play', 'info');
+                if (isSafari || isIOS) {
+                    showNotification('Tap the video directly to play', 'info');
+                } else {
+                    showNotification('Click to play video', 'info');
+                }
             });
         }
     } else {
@@ -251,9 +301,15 @@ function toggleMute() {
     muteBtn.textContent = videoElement.muted ? '🔇' : '🔊';
 }
 
-// Show export section
+// Show export section with Safari warning
 function showExportSection() {
     exportSection.style.display = 'block';
+    
+    // Update export button text for Safari users
+    if (isSafari && !mediaRecorderSupported) {
+        exportBtn.innerHTML = 'Export Video <small>(Safari Limited)</small>';
+        exportBtn.title = 'Safari has limited export capabilities. Best results in Chrome/Firefox.';
+    }
 }
 
 // Drag and drop handlers (desktop only)
@@ -285,10 +341,16 @@ function handleDrop(e) {
     }
 }
 
-// Export video with phone frame
+// Export video with phone frame - Safari compatibility improvements
 async function exportVideo() {
     if (!currentVideo || !videoElement) {
         showNotification('Please upload a video first.', 'error');
+        return;
+    }
+
+    // Check for Safari limitations upfront
+    if (isSafari && !mediaRecorderSupported) {
+        showSafariExportMessage();
         return;
     }
 
@@ -297,6 +359,12 @@ async function exportVideo() {
     exportBtn.disabled = true;
 
     try {
+        // Check if canvas.captureStream is supported
+        const testCanvas = document.createElement('canvas');
+        if (typeof testCanvas.captureStream !== 'function') {
+            throw new Error('Canvas recording not supported in this browser');
+        }
+
         // Show progress modal
         showExportProgress();
         
@@ -308,60 +376,71 @@ async function exportVideo() {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Set canvas size to 4:3 aspect ratio with ultra high resolution
-        const phoneRect = phoneDevice.getBoundingClientRect();
-        const canvasWidth = 2400; // Ultra high resolution 4:3 format (doubled)
-        const canvasHeight = 1800; // 4:3 aspect ratio (2400x1800)
+        // Set canvas size to 4:3 aspect ratio with high resolution
+        const canvasWidth = 2400; 
+        const canvasHeight = 1800; 
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
         
-        // Calculate phone position to center it on the canvas with good proportions (scaled up)
-        const phoneWidth = 700; // Doubled size for higher resolution
-        const phoneHeight = 1400; // 2:1 ratio for phone (doubled)
+        // Calculate phone position to center it on the canvas
+        const phoneWidth = 700; 
+        const phoneHeight = 1400; 
         const phoneX = (canvasWidth - phoneWidth) / 2;
         const phoneY = (canvasHeight - phoneHeight) / 2;
         
         // Create stream from canvas
         const stream = canvas.captureStream(30); // 30 FPS
         
-        // Setup MediaRecorder with MP4 support
+        // Setup MediaRecorder with better Safari support
         recordedChunks = [];
-        let mimeType = 'video/mp4';
+        let mimeType = 'video/webm';
         
-        // Fallback to webm if mp4 not supported
-        if (!MediaRecorder.isTypeSupported('video/mp4')) {
-            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-                mimeType = 'video/webm;codecs=vp9';
-            } else {
-                mimeType = 'video/webm';
-            }
+        // Try different codecs in order of preference
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+            mimeType = 'video/webm;codecs=vp9';
+        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+            mimeType = 'video/webm;codecs=vp8';
+        } else if (MediaRecorder.isTypeSupported('video/webm')) {
+            mimeType = 'video/webm';
+        } else {
+            throw new Error('No supported video format available');
         }
+        
+        console.log('Using MIME type:', mimeType);
         
         mediaRecorder = new MediaRecorder(stream, {
             mimeType: mimeType,
-            videoBitsPerSecond: 15000000 // 15 Mbps for ultra high quality
+            videoBitsPerSecond: isSafari ? 8000000 : 15000000 // Lower bitrate for Safari
         });
 
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 recordedChunks.push(event.data);
+                console.log('Data chunk received:', event.data.size);
             }
         };
 
         mediaRecorder.onstop = () => {
+            console.log('Recording stopped, creating blob...');
             const blob = new Blob(recordedChunks, { type: mimeType });
-            const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-            downloadVideo(blob, `phone-frame-4x3.${extension}`);
+            const extension = 'webm'; // Always webm for Safari compatibility
+            downloadVideo(blob, `screenvid-export.${extension}`);
             hideExportProgress();
             stream.getTracks().forEach(track => track.stop());
         };
 
+        mediaRecorder.onerror = (event) => {
+            console.error('MediaRecorder error:', event);
+            throw new Error('Recording failed');
+        };
+
         // Start recording
-        mediaRecorder.start();
+        mediaRecorder.start(1000); // Collect data every second
+        console.log('Recording started...');
         
         // Restart video from beginning
         videoElement.currentTime = 0;
-        videoElement.play();
+        await videoElement.play();
         
         // Update progress
         updateExportProgress(recordingDuration);
@@ -381,7 +460,7 @@ async function exportVideo() {
                 
                 // Calculate pulse animation
                 const elapsedTime = (Date.now() - animationStartTime) / 1000;
-                const pulseScale = 1 + Math.sin(elapsedTime * 2) * 0.02; // Gentle 2% pulse every ~3 seconds
+                const pulseScale = 1 + Math.sin(elapsedTime * 2) * 0.02; 
                 
                 // Apply pulse scale to phone position and size
                 const pulsedPhoneWidth = phoneWidth * pulseScale;
@@ -389,13 +468,13 @@ async function exportVideo() {
                 const pulsedPhoneX = phoneX - (pulsedPhoneWidth - phoneWidth) / 2;
                 const pulsedPhoneY = phoneY - (pulsedPhoneHeight - phoneHeight) / 2;
                 
-                // Add subtle shadow behind phone (scaled for higher resolution)
+                // Add subtle shadow behind phone
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
                 ctx.shadowBlur = 40;
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 20;
                 
-                // Draw phone frame background (black with rounded corners)
+                // Draw phone frame background
                 ctx.fillStyle = '#1a1a1a';
                 ctx.beginPath();
                 ctx.roundRect(pulsedPhoneX, pulsedPhoneY, pulsedPhoneWidth, pulsedPhoneHeight, 70 * pulseScale);
@@ -407,42 +486,39 @@ async function exportVideo() {
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 0;
                 
-                // Draw phone frame border (scaled for higher resolution)
+                // Draw phone frame border
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 12 * pulseScale;
                 ctx.beginPath();
                 ctx.roundRect(pulsedPhoneX + 6 * pulseScale, pulsedPhoneY + 6 * pulseScale, pulsedPhoneWidth - 12 * pulseScale, pulsedPhoneHeight - 12 * pulseScale, 64 * pulseScale);
                 ctx.stroke();
                 
-                // Draw phone screen area (black background) - matching outer radius
+                // Draw phone screen area
                 ctx.fillStyle = '#000';
                 ctx.beginPath();
                 ctx.roundRect(pulsedPhoneX + 30 * pulseScale, pulsedPhoneY + 30 * pulseScale, pulsedPhoneWidth - 60 * pulseScale, pulsedPhoneHeight - 60 * pulseScale, 64 * pulseScale);
                 ctx.fill();
                 
                 // Draw video frame if available
-                if (videoElement && !videoElement.paused) {
+                if (videoElement && !videoElement.paused && videoElement.readyState >= 2) {
                     const screenWidth = pulsedPhoneWidth - 60 * pulseScale;
                     const screenHeight = pulsedPhoneHeight - 60 * pulseScale;
                     const screenX = pulsedPhoneX + 30 * pulseScale;
                     const screenY = pulsedPhoneY + 30 * pulseScale;
                     
-                    // Fit video to fill screen width (like object-fit: cover but width-priority)
+                    // Fit video to screen
                     const videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
                     const screenAspectRatio = screenWidth / screenHeight;
                     
                     let drawWidth, drawHeight, drawX, drawY;
                     
-                    // Always fit to width to eliminate side gaps
                     drawWidth = screenWidth;
                     drawHeight = screenWidth / videoAspectRatio;
                     drawX = screenX;
                     
                     if (drawHeight <= screenHeight) {
-                        // Video fits height-wise, center it vertically
                         drawY = screenY + (screenHeight - drawHeight) / 2;
                     } else {
-                        // Video is taller than screen, center it vertically (crop top/bottom)
                         drawY = screenY - (drawHeight - screenHeight) / 2;
                     }
                     
@@ -451,18 +527,22 @@ async function exportVideo() {
                     ctx.roundRect(screenX, screenY, screenWidth, screenHeight, 64 * pulseScale);
                     ctx.clip();
                     
-                    ctx.drawImage(videoElement, drawX, drawY, drawWidth, drawHeight);
+                    try {
+                        ctx.drawImage(videoElement, drawX, drawY, drawWidth, drawHeight);
+                    } catch (e) {
+                        console.error('Error drawing video frame:', e);
+                    }
+                    
                     ctx.restore();
                 }
                 
-                // Add phone details (home indicator only)
-                // Home indicator (scaled for higher resolution and pulse)
+                // Add home indicator
                 ctx.fillStyle = '#333';
                 ctx.beginPath();
                 ctx.roundRect(pulsedPhoneX + pulsedPhoneWidth/2 - 60 * pulseScale, pulsedPhoneY + pulsedPhoneHeight - 30 * pulseScale, 120 * pulseScale, 12 * pulseScale, 6 * pulseScale);
                 ctx.fill();
                 
-                // Add "Built on Vibe Code" text in bottom right corner
+                // Add branding
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
                 ctx.font = '72px Nunito, -apple-system, BlinkMacSystemFont, sans-serif';
                 ctx.textAlign = 'right';
@@ -478,18 +558,51 @@ async function exportVideo() {
         // Stop recording after duration
         setTimeout(() => {
             if (mediaRecorder && mediaRecorder.state === 'recording') {
+                console.log('Stopping recording...');
                 mediaRecorder.stop();
             }
         }, recordingDuration);
 
     } catch (error) {
         console.error('Error exporting video:', error);
-        showNotification('Error exporting video. Please try again.', 'error');
+        
+        if (isSafari) {
+            showNotification('Safari export failed. Try Chrome or Firefox for best results.', 'error');
+        } else {
+            showNotification('Error exporting video. Please try again.', 'error');
+        }
+        
         hideExportProgress();
     } finally {
         exportBtn.textContent = 'Export Video with Phone Frame';
         exportBtn.disabled = false;
     }
+}
+
+// Show Safari-specific export message
+function showSafariExportMessage() {
+    const modal = document.createElement('div');
+    modal.className = 'export-progress';
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.zIndex = '10001';
+    
+    modal.innerHTML = `
+        <h3>🦾 Safari Limitations</h3>
+        <p>Sorry! Safari doesn't support video recording features needed for export.</p>
+        <div style="margin: 20px 0;">
+            <strong>For best results, please use:</strong><br>
+            • Chrome<br>
+            • Firefox<br>
+            • Edge
+        </div>
+        <p><small>You can still preview your video in Safari, but export requires a different browser.</small></p>
+        <button onclick="this.parentElement.remove()" style="margin-top: 15px; padding: 10px 20px; background: black; color: white; border: none; border-radius: 8px; cursor: pointer;">Got it</button>
+    `;
+    
+    document.body.appendChild(modal);
 }
 
 // Download video file
@@ -511,8 +624,11 @@ function showExportProgress() {
     const modal = document.createElement('div');
     modal.id = 'export-progress-modal';
     modal.className = 'export-progress';
+    
+    const formatText = isSafari ? 'WebM' : 'Ultra High-Quality MP4';
+    
     modal.innerHTML = `
-        <h3>🎬 Creating Animated Ultra High-Quality MP4</h3>
+        <h3>🎬 Creating Animated ${formatText}</h3>
         <p>Adding phone frame with pulse animation and grid background...</p>
         <div class="progress-bar">
             <div class="progress-fill" id="progress-fill"></div>
