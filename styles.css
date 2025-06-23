@@ -150,14 +150,6 @@ header p {
     box-shadow: none;
 }
 
-.export-button small {
-    display: block;
-    font-size: 0.8rem;
-    font-weight: 400;
-    opacity: 0.8;
-    margin-top: 2px;
-}
-
 /* Phone Device Frame */
 .preview-section {
     display: flex;
