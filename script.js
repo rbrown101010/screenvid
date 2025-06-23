@@ -12,88 +12,216 @@ const exportBtn = document.getElementById('export-btn');
 const videoContainer = document.getElementById('video-container');
 const phoneDevice = document.getElementById('phone-device');
 
+// Check if we're on iOS
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
+    setupIOSWorkarounds();
 });
 
 // Setup all event listeners
 function setupEventListeners() {
-    // File input change
+    // File input change - multiple events for better iOS compatibility
     videoInput.addEventListener('change', handleVideoUpload);
+    videoInput.addEventListener('input', handleVideoUpload); // iOS backup
     
-    // Drag and drop functionality
-    uploadArea.addEventListener('dragover', handleDragOver);
-    uploadArea.addEventListener('dragleave', handleDragLeave);
-    uploadArea.addEventListener('drop', handleDrop);
-    uploadArea.addEventListener('click', () => videoInput.click());
+    // Upload area click - more explicit for iOS
+    uploadArea.addEventListener('click', handleUploadAreaClick);
+    uploadArea.addEventListener('touchend', handleUploadAreaClick);
     
-    // Prevent default drag behaviors on document
-    document.addEventListener('dragover', e => e.preventDefault());
-    document.addEventListener('drop', e => e.preventDefault());
-}
-
-// Handle video file upload
-function handleVideoUpload(event) {
-    const file = event.target.files[0];
-    if (file && file.type.startsWith('video/')) {
-        currentVideo = file;
-        loadVideo(file);
-        showExportSection();
-        showNotification('Video uploaded successfully!', 'success');
-    } else {
-        showNotification('Please select a valid video file.', 'error');
+    // Drag and drop functionality (disabled on mobile)
+    if (!isIOS) {
+        uploadArea.addEventListener('dragover', handleDragOver);
+        uploadArea.addEventListener('dragleave', handleDragLeave);
+        uploadArea.addEventListener('drop', handleDrop);
+        
+        // Prevent default drag behaviors on document
+        document.addEventListener('dragover', e => e.preventDefault());
+        document.addEventListener('drop', e => e.preventDefault());
     }
 }
 
-// Load and display video
-function loadVideo(file) {
-    const videoURL = URL.createObjectURL(file);
-    
-    // Clear container
-    videoContainer.innerHTML = '';
-    
-    // Create video element
-    videoElement = document.createElement('video');
-    videoElement.src = videoURL;
-    videoElement.controls = false;
-    videoElement.muted = true;
-    videoElement.loop = true;
-    videoElement.autoplay = true;
-    videoElement.playsInline = true;
-    
-    videoContainer.appendChild(videoElement);
-    
-    // Add video controls
-    addVideoControls();
-    
-    // Play video
-    videoElement.play().catch(e => {
-        console.log('Auto-play failed:', e);
-    });
+// Setup iOS-specific workarounds
+function setupIOSWorkarounds() {
+    if (isIOS || isSafari) {
+        // Update upload area text for mobile
+        const uploadText = uploadArea.querySelector('h3');
+        const uploadSubtext = uploadArea.querySelector('p');
+        
+        if (uploadText) {
+            uploadText.textContent = 'Tap to select your video';
+        }
+        if (uploadSubtext) {
+            uploadSubtext.textContent = 'Choose from Photos or Files';
+        }
+        
+        // Add more specific file type acceptance for iOS
+        videoInput.setAttribute('accept', 'video/mp4,video/mov,video/quicktime,video/m4v,video/*');
+        
+        // Add capture attribute for direct camera access
+        videoInput.setAttribute('capture', 'environment');
+    }
 }
 
-// Add video control buttons
+// Handle upload area clicks
+function handleUploadAreaClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Small delay to ensure iOS processes the user interaction
+    setTimeout(() => {
+        videoInput.click();
+    }, 100);
+}
+
+// Handle video file upload with better iOS support
+function handleVideoUpload(event) {
+    const files = event.target.files;
+    
+    if (!files || files.length === 0) {
+        console.log('No files selected');
+        return;
+    }
+    
+    const file = files[0];
+    console.log('File selected:', file.name, file.type, file.size);
+    
+    // Check if it's a video file
+    if (!file.type.startsWith('video/') && !isVideoFile(file)) {
+        showNotification('Please select a valid video file (MP4, MOV, etc.)', 'error');
+        return;
+    }
+    
+    // Check file size (limit to 500MB for iOS)
+    const maxSize = isIOS ? 500 * 1024 * 1024 : 1024 * 1024 * 1024; // 500MB for iOS, 1GB for others
+    if (file.size > maxSize) {
+        const maxSizeText = isIOS ? '500MB' : '1GB';
+        showNotification(`File too large. Please select a video smaller than ${maxSizeText}.`, 'error');
+        return;
+    }
+    
+    currentVideo = file;
+    loadVideo(file);
+    showExportSection();
+    showNotification('Video uploaded successfully!', 'success');
+}
+
+// Check if file is a video based on extension (iOS backup)
+function isVideoFile(file) {
+    const videoExtensions = ['.mp4', '.mov', '.m4v', '.quicktime', '.avi', '.webm', '.mkv'];
+    const fileName = file.name.toLowerCase();
+    return videoExtensions.some(ext => fileName.endsWith(ext));
+}
+
+// Load and display video with iOS optimizations
+function loadVideo(file) {
+    try {
+        const videoURL = URL.createObjectURL(file);
+        
+        // Clear container
+        videoContainer.innerHTML = '';
+        
+        // Create video element with iOS-specific attributes
+        videoElement = document.createElement('video');
+        videoElement.src = videoURL;
+        videoElement.controls = false;
+        videoElement.muted = true;
+        videoElement.loop = true;
+        videoElement.playsInline = true; // Crucial for iOS
+        videoElement.setAttribute('webkit-playsinline', 'true'); // Safari specific
+        videoElement.preload = 'metadata';
+        
+        // iOS-specific: Don't autoplay, wait for user interaction
+        if (isIOS || isSafari) {
+            videoElement.autoplay = false;
+        } else {
+            videoElement.autoplay = true;
+        }
+        
+        // Add error handling
+        videoElement.addEventListener('error', (e) => {
+            console.error('Video error:', e);
+            showNotification('Error loading video. Please try a different format.', 'error');
+        });
+        
+        // Add loaded event handler
+        videoElement.addEventListener('loadedmetadata', () => {
+            console.log('Video loaded:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+            
+            // Try to play for non-iOS
+            if (!isIOS && !isSafari) {
+                videoElement.play().catch(e => {
+                    console.log('Auto-play failed:', e);
+                });
+            }
+        });
+        
+        // Add can play event
+        videoElement.addEventListener('canplay', () => {
+            console.log('Video can play');
+        });
+        
+        videoContainer.appendChild(videoElement);
+        
+        // Add video controls
+        addVideoControls();
+        
+    } catch (error) {
+        console.error('Error loading video:', error);
+        showNotification('Error loading video. Please try again.', 'error');
+    }
+}
+
+// Add video control buttons with better iOS support
 function addVideoControls() {
     const controls = document.createElement('div');
     controls.className = 'video-controls';
     controls.innerHTML = `
-        <button onclick="togglePlayPause()" id="play-btn">⏸️</button>
-        <button onclick="restartVideo()">🔄</button>
-        <button onclick="toggleMute()" id="mute-btn">🔇</button>
+        <button onclick="togglePlayPause()" id="play-btn" type="button">▶️</button>
+        <button onclick="restartVideo()" type="button">🔄</button>
+        <button onclick="toggleMute()" id="mute-btn" type="button">🔇</button>
     `;
     
     videoContainer.appendChild(controls);
+    
+    // Add touch event handlers for iOS
+    if (isIOS) {
+        const buttons = controls.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                button.style.transform = 'scale(0.95)';
+            });
+            
+            button.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                button.style.transform = 'scale(1)';
+            });
+        });
+    }
 }
 
-// Video control functions
+// Video control functions with iOS improvements
 function togglePlayPause() {
     if (!videoElement) return;
     
     const playBtn = document.getElementById('play-btn');
+    
     if (videoElement.paused) {
-        videoElement.play();
-        playBtn.textContent = '⏸️';
+        // Use user gesture to play on iOS
+        const playPromise = videoElement.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                playBtn.textContent = '⏸️';
+            }).catch(error => {
+                console.log('Play failed:', error);
+                showNotification('Tap the video to play', 'info');
+            });
+        }
     } else {
         videoElement.pause();
         playBtn.textContent = '▶️';
@@ -104,8 +232,15 @@ function restartVideo() {
     if (!videoElement) return;
     
     videoElement.currentTime = 0;
-    videoElement.play();
-    document.getElementById('play-btn').textContent = '⏸️';
+    
+    const playPromise = videoElement.play();
+    if (playPromise !== undefined) {
+        playPromise.then(() => {
+            document.getElementById('play-btn').textContent = '⏸️';
+        }).catch(error => {
+            console.log('Play failed:', error);
+        });
+    }
 }
 
 function toggleMute() {
@@ -121,7 +256,7 @@ function showExportSection() {
     exportSection.style.display = 'block';
 }
 
-// Drag and drop handlers
+// Drag and drop handlers (desktop only)
 function handleDragOver(e) {
     e.preventDefault();
     uploadArea.classList.add('dragover');
@@ -139,7 +274,7 @@ function handleDrop(e) {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         const file = files[0];
-        if (file.type.startsWith('video/')) {
+        if (file.type.startsWith('video/') || isVideoFile(file)) {
             currentVideo = file;
             loadVideo(file);
             showExportSection();
