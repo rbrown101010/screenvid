@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Record Plus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Screen Record Plus</h1>
+            <p>Make your screen recordings not look like shit on the feed</p>
+        </header>
+
+        <div class="main-content">
+            <div class="controls">
+                <div class="upload-section">
+                    <label for="video-input" class="upload-label">
+                        <div class="upload-area" id="upload-area">
+                            <div class="upload-icon">📱</div>
+                            <h3>Drop your iPhone screen recordings here</h3>
+                            <p>or click to select</p>
+                            <small>Supports MP4, MOV, WebM and other video formats</small>
+                        </div>
+                        <input type="file" id="video-input" accept="video/*" hidden>
+                    </label>
+                </div>
+
+                <div class="export-section" id="export-section" style="display: none;">
+                    <button onclick="exportVideo()" id="export-btn" class="export-button">
+                        Export Video with Phone Frame
+                    </button>
+                </div>
+            </div>
+
+            <div class="preview-section">
+                <div class="phone-device" id="phone-device">
+                    <div class="phone-screen" id="phone-screen">
+                        <div class="video-container" id="video-container">
+                            <div class="placeholder">
+                                <div class="placeholder-icon">🎬</div>
+                                <p>Upload a video to see preview</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>How it works:</h3>
+            <ol>
+                <li>Upload your video file (iPhone screen recording, etc.)</li>
+                <li>Preview your video inside the phone frame</li>
+                <li>Click "Export Video with Phone Frame" to download</li>
+                <li>Share your professional-looking framed video!</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
